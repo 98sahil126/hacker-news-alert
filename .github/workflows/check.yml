@@ -1,0 +1,50 @@
+name: Hacker News Monitor
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # runs every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Fetch Hacker News
+        run: |
+          curl -s https://news.ycombinator.com/ > latest.html
+
+      - name: Compare changes
+        id: compare
+        run: |
+          if [ ! -f previous.html ]; then
+            echo "First run"
+            mv latest.html previous.html
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            if cmp -s latest.html previous.html; then
+              echo "No change"
+              echo "changed=false" >> $GITHUB_OUTPUT
+            else
+              echo "Change detected"
+              mv latest.html previous.html
+              echo "changed=true" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Send Email
+        if: steps.compare.outputs.changed == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "🚨 Hacker News Updated!"
+          body: "Hacker News has new updates. Check now: https://news.ycombinator.com/"
+          to: sahilvaghela1998@gmail.com
+          from: GitHub Actions
