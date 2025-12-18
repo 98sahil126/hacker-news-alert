@@ -2,8 +2,11 @@ name: Hacker News Monitor
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # runs every 30 minutes
+    - cron: "*/30 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: write   # 🔥 VERY IMPORTANT
 
 jobs:
   check:
@@ -12,12 +15,13 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true   # 🔥 REQUIRED
 
       - name: Setup Git
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
 
       - name: Fetch Hacker News
         run: |
@@ -31,6 +35,7 @@ jobs:
             mv latest.html previous.html
             git add previous.html
             git commit -m "Save initial Hacker News snapshot" || true
+            git push
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             if cmp -s latest.html previous.html; then
@@ -41,10 +46,10 @@ jobs:
               mv latest.html previous.html
               git add previous.html
               git commit -m "Hacker News updated" || true
+              git push
               echo "changed=true" >> $GITHUB_OUTPUT
             fi
           fi
-
 
       - name: Send Email
         if: steps.compare.outputs.changed == 'true'
@@ -56,6 +61,6 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "🚨 Hacker News Updated!"
-          body: "Hacker News has new updates. Check now: https://news.ycombinator.com/"
+          body: "Hacker News has new updates: https://news.ycombinator.com/"
           to: sahilvaghela1998@gmail.com
           from: GitHub Actions
