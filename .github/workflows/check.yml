@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # 🔥 VERY IMPORTANT
+  contents: write   # REQUIRED to push files
 
 jobs:
   check:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          persist-credentials: true   # 🔥 REQUIRED
+          persist-credentials: true
 
       - name: Setup Git
         run: |
@@ -34,7 +34,7 @@ jobs:
             echo "First run - saving baseline"
             mv latest.html previous.html
             git add previous.html
-            git commit -m "Save initial Hacker News snapshot" || true
+            git commit -m "Initial Hacker News snapshot" || true
             git push
             echo "changed=false" >> $GITHUB_OUTPUT
           else
@@ -61,6 +61,6 @@ jobs:
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "🚨 Hacker News Updated!"
-          body: "Hacker News has new updates: https://news.ycombinator.com/"
+          body: "New update detected on Hacker News: https://news.ycombinator.com/"
           to: sahilvaghela1998@gmail.com
           from: GitHub Actions
