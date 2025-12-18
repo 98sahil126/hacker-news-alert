@@ -13,6 +13,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Setup Git
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+
       - name: Fetch Hacker News
         run: |
           curl -s https://news.ycombinator.com/ > latest.html
@@ -21,19 +27,24 @@ jobs:
         id: compare
         run: |
           if [ ! -f previous.html ]; then
-            echo "First run"
+            echo "First run - saving baseline"
             mv latest.html previous.html
+            git add previous.html
+            git commit -m "Save initial Hacker News snapshot" || true
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             if cmp -s latest.html previous.html; then
-              echo "No change"
+              echo "No change detected"
               echo "changed=false" >> $GITHUB_OUTPUT
             else
               echo "Change detected"
               mv latest.html previous.html
+              git add previous.html
+              git commit -m "Hacker News updated" || true
               echo "changed=true" >> $GITHUB_OUTPUT
             fi
           fi
+
 
       - name: Send Email
         if: steps.compare.outputs.changed == 'true'
