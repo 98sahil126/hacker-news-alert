@@ -2,11 +2,11 @@ name: Hacker News Monitor
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/2 * * * *"   # ⏱️ instant testing (change back to 30 later)
   workflow_dispatch:
 
 permissions:
-  contents: write   # REQUIRED to push files
+  contents: write
 
 jobs:
   check:
@@ -23,30 +23,39 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Fetch Hacker News
+      - name: Fetch HN newest items (title + link)
         run: |
-          curl -s https://news.ycombinator.com/ > latest.html
+          curl -s https://news.ycombinator.com/newest \
+          | grep 'class="titleline"' \
+          | sed -E 's/.*<a href="([^"]+)".*>(.*)<\/a>.*/\2 || \1/' \
+          > latest.txt
 
-      - name: Compare changes
+      - name: Compare newest items
         id: compare
         run: |
-          if [ ! -f previous.html ]; then
+          if [ ! -f previous.txt ]; then
             echo "First run - saving baseline"
-            mv latest.html previous.html
-            git add previous.html
-            git commit -m "Initial Hacker News snapshot" || true
+            mv latest.txt previous.txt
+            git add previous.txt
+            git commit -m "Initial HN newest baseline" || true
             git push
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            if cmp -s latest.html previous.html; then
-              echo "No change detected"
+            NEW_ITEMS=$(comm -13 previous.txt latest.txt)
+
+            if [ -z "$NEW_ITEMS" ]; then
+              echo "No new items detected"
               echo "changed=false" >> $GITHUB_OUTPUT
             else
-              echo "Change detected"
-              mv latest.html previous.html
-              git add previous.html
-              git commit -m "Hacker News updated" || true
+              echo "New items detected:"
+              echo "$NEW_ITEMS"
+
+              echo "$NEW_ITEMS" > new_items.txt
+              mv latest.txt previous.txt
+              git add previous.txt new_items.txt
+              git commit -m "New HN items detected" || true
               git push
+
               echo "changed=true" >> $GITHUB_OUTPUT
             fi
           fi
@@ -60,7 +69,13 @@ jobs:
           secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚨 Hacker News Updated!"
-          body: "New update detected on Hacker News: https://news.ycombinator.com/"
+          subject: "🚀 New Hacker News Item"
+          body: |
+            New Hacker News update detected:
+
+            $(cat new_items.txt)
+
+            Open HN Newest:
+            https://news.ycombinator.com/newest
           to: sahilvaghela1998@gmail.com
           from: GitHub Actions
