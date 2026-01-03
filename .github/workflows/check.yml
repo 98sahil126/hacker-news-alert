@@ -1,8 +1,8 @@
-name: Hacker News Monitor
+name: Hacker News Newest Monitor
 
 on:
   schedule:
-    - cron: "*/2 * * * *"   # instant testing (change to */30 later)
+    - cron: "*/2 * * * *"   # instant testing
   workflow_dispatch:
 
 permissions:
@@ -23,42 +23,49 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      # 1️⃣ Fetch newest HN items (title + FULL link)
-      - name: Fetch HN newest items
+      # 1️⃣ Extract ONLY the TOP newest story
+      - name: Fetch top newest story
         run: |
           curl -s https://news.ycombinator.com/newest \
-          | grep 'class="titleline"' \
-          | sed -E 's/.*<a href="([^"]+)".*>(.*)<\/a>.*/\2 || \1/' \
-          | sed 's# || item?# || https://news.ycombinator.com/item?#' \
-          > latest.txt
+          | awk '
+              /class="athing"/ {
+                id=$0
+                getline
+                if ($0 ~ /class="titleline"/) {
+                  match($0, /href="([^"]+)".*>(.*)<\/a>/, a)
+                  link=a[1]
+                  title=a[2]
 
-      # 2️⃣ Compare with previous run
-      - name: Compare newest items
+                  if (link ~ /^item\?id=/)
+                    link="https://news.ycombinator.com/" link
+
+                  print title " || " link
+                  exit
+                }
+              }
+            ' > latest_top.txt
+
+      # 2️⃣ Compare with previous top story
+      - name: Compare top story
         id: compare
         run: |
-          if [ ! -f previous.txt ]; then
-            echo "First run - saving baseline"
-            mv latest.txt previous.txt
-            git add previous.txt
-            git commit -m "Initial HN newest baseline" || true
+          if [ ! -f previous_top.txt ]; then
+            echo "Saving initial top story"
+            mv latest_top.txt previous_top.txt
+            git add previous_top.txt
+            git commit -m "Initial HN top story" || true
             git push
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            NEW_ITEMS=$(comm -13 previous.txt latest.txt)
-
-            if [ -z "$NEW_ITEMS" ]; then
-              echo "No new items detected"
+            if cmp -s latest_top.txt previous_top.txt; then
+              echo "Top story unchanged"
               echo "changed=false" >> $GITHUB_OUTPUT
             else
-              echo "New items detected:"
-              echo "$NEW_ITEMS"
-
-              echo "$NEW_ITEMS" > new_items.txt
-              mv latest.txt previous.txt
-              git add previous.txt new_items.txt
-              git commit -m "New HN items detected" || true
+              echo "New top story detected"
+              mv latest_top.txt previous_top.txt
+              git add previous_top.txt
+              git commit -m "New HN top story" || true
               git push
-
               echo "changed=true" >> $GITHUB_OUTPUT
             fi
           fi
@@ -68,10 +75,10 @@ jobs:
         if: steps.compare.outputs.changed == 'true'
         run: |
           echo "EMAIL_CONTENT<<EOF" >> $GITHUB_ENV
-          cat new_items.txt >> $GITHUB_ENV
+          cat previous_top.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      # 4️⃣ Send email with EXACT update links
+      # 4️⃣ Send email
       - name: Send Email
         if: steps.compare.outputs.changed == 'true'
         uses: dawidd6/action-send-mail@v3
@@ -81,13 +88,13 @@ jobs:
           secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 New Hacker News Update"
+          subject: "🆕 New Hacker News Story"
           body: |
-            🚀 New Hacker News update detected:
+            A new story has appeared at the top of Hacker News (Newest):
 
             ${{ env.EMAIL_CONTENT }}
 
-            Open HN Newest:
+            View page:
             https://news.ycombinator.com/newest
           to: sahilvaghela1998@gmail.com
           from: GitHub Actions
