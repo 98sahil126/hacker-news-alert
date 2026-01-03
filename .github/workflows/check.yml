@@ -2,7 +2,7 @@ name: Hacker News Newest Monitor
 
 on:
   schedule:
-    - cron: "*/2 * * * *"   # GitHub best-effort (manual trigger also works)
+    - cron: "*/2 * * * *"   # best-effort (GitHub may delay)
   workflow_dispatch:
 
 permissions:
@@ -23,14 +23,17 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      # 1️⃣ Fetch ONLY the ID of the TOP newest story (rock-solid)
+      # 1️⃣ Fetch TOP story ID (CACHE-BUSTED)
       - name: Fetch top story ID
         run: |
-          curl -s https://news.ycombinator.com/newest \
+          curl -s "https://news.ycombinator.com/newest?p=0&t=$(date +%s)" \
           | grep 'class="athing"' \
           | head -n 1 \
           | sed -n 's/.*id="\([0-9]*\)".*/\1/p' \
-          > latest_id.txt
+          | tee latest_id.txt
+
+          echo "Fetched top story ID:"
+          cat latest_id.txt
 
       # 2️⃣ Compare with previous top story ID
       - name: Compare top story ID
