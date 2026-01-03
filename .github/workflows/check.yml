@@ -2,7 +2,7 @@ name: Hacker News Newest Monitor
 
 on:
   schedule:
-    - cron: "*/2 * * * *"   # instant testing
+    - cron: "*/2 * * * *"   # GitHub best-effort (manual trigger also works)
   workflow_dispatch:
 
 permissions:
@@ -23,62 +23,65 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      # 1️⃣ Extract ONLY the TOP newest story
-      - name: Fetch top newest story
+      # 1️⃣ Fetch ONLY the ID of the TOP newest story (rock-solid)
+      - name: Fetch top story ID
         run: |
           curl -s https://news.ycombinator.com/newest \
-          | awk '
-              /class="athing"/ {
-                id=$0
-                getline
-                if ($0 ~ /class="titleline"/) {
-                  match($0, /href="([^"]+)".*>(.*)<\/a>/, a)
-                  link=a[1]
-                  title=a[2]
+          | grep 'class="athing"' \
+          | head -n 1 \
+          | sed -n 's/.*id="\([0-9]*\)".*/\1/p' \
+          > latest_id.txt
 
-                  if (link ~ /^item\?id=/)
-                    link="https://news.ycombinator.com/" link
-
-                  print title " || " link
-                  exit
-                }
-              }
-            ' > latest_top.txt
-
-      # 2️⃣ Compare with previous top story
-      - name: Compare top story
+      # 2️⃣ Compare with previous top story ID
+      - name: Compare top story ID
         id: compare
         run: |
-          if [ ! -f previous_top.txt ]; then
-            echo "Saving initial top story"
-            mv latest_top.txt previous_top.txt
-            git add previous_top.txt
-            git commit -m "Initial HN top story" || true
+          if [ ! -f previous_id.txt ]; then
+            echo "First run - saving baseline ID"
+            mv latest_id.txt previous_id.txt
+            git add previous_id.txt
+            git commit -m "Initial HN top story ID" || true
             git push
             echo "changed=false" >> $GITHUB_OUTPUT
           else
-            if cmp -s latest_top.txt previous_top.txt; then
+            if cmp -s latest_id.txt previous_id.txt; then
               echo "Top story unchanged"
               echo "changed=false" >> $GITHUB_OUTPUT
             else
               echo "New top story detected"
-              mv latest_top.txt previous_top.txt
-              git add previous_top.txt
-              git commit -m "New HN top story" || true
+              mv latest_id.txt previous_id.txt
+              git add previous_id.txt
+              git commit -m "New HN top story ID" || true
               git push
               echo "changed=true" >> $GITHUB_OUTPUT
             fi
           fi
 
-      # 3️⃣ Prepare email content
+      # 3️⃣ Fetch title + link ONLY if top story changed
+      - name: Fetch top story details
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          STORY_ID=$(cat previous_id.txt)
+
+          curl -s "https://news.ycombinator.com/item?id=$STORY_ID" \
+          | grep '<title>' \
+          | sed 's/<[^>]*>//g' \
+          | sed 's/ | Hacker News//' \
+          > story_title.txt
+
+          echo "https://news.ycombinator.com/item?id=$STORY_ID" > story_link.txt
+
+      # 4️⃣ Prepare email content
       - name: Prepare email content
         if: steps.compare.outputs.changed == 'true'
         run: |
           echo "EMAIL_CONTENT<<EOF" >> $GITHUB_ENV
-          cat previous_top.txt >> $GITHUB_ENV
+          cat story_title.txt >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          cat story_link.txt >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
-      # 4️⃣ Send email
+      # 5️⃣ Send email
       - name: Send Email
         if: steps.compare.outputs.changed == 'true'
         uses: dawidd6/action-send-mail@v3
@@ -88,9 +91,9 @@ jobs:
           secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🆕 New Hacker News Story"
+          subject: "🆕 New Hacker News Top Story"
           body: |
-            A new story has appeared at the top of Hacker News (Newest):
+            A new story is now at the top of Hacker News (Newest):
 
             ${{ env.EMAIL_CONTENT }}
 
