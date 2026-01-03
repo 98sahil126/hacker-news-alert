@@ -2,7 +2,7 @@ name: Hacker News Monitor
 
 on:
   schedule:
-    - cron: "*/2 * * * *"   # ⏱️ instant testing (change back to 30 later)
+    - cron: "*/2 * * * *"   # instant testing (change to */30 later)
   workflow_dispatch:
 
 permissions:
@@ -23,13 +23,16 @@ jobs:
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
 
-      - name: Fetch HN newest items (title + link)
+      # 1️⃣ Fetch newest HN items (title + FULL link)
+      - name: Fetch HN newest items
         run: |
           curl -s https://news.ycombinator.com/newest \
           | grep 'class="titleline"' \
           | sed -E 's/.*<a href="([^"]+)".*>(.*)<\/a>.*/\2 || \1/' \
+          | sed 's# || item?# || https://news.ycombinator.com/item?#' \
           > latest.txt
 
+      # 2️⃣ Compare with previous run
       - name: Compare newest items
         id: compare
         run: |
@@ -60,6 +63,15 @@ jobs:
             fi
           fi
 
+      # 3️⃣ Prepare email content
+      - name: Prepare email content
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          echo "EMAIL_CONTENT<<EOF" >> $GITHUB_ENV
+          cat new_items.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # 4️⃣ Send email with EXACT update links
       - name: Send Email
         if: steps.compare.outputs.changed == 'true'
         uses: dawidd6/action-send-mail@v3
@@ -69,11 +81,11 @@ jobs:
           secure: true
           username: ${{ secrets.EMAIL_USERNAME }}
           password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 New Hacker News Item"
+          subject: "🚀 New Hacker News Update"
           body: |
-            New Hacker News update detected:
+            🚀 New Hacker News update detected:
 
-            $(cat new_items.txt)
+            ${{ env.EMAIL_CONTENT }}
 
             Open HN Newest:
             https://news.ycombinator.com/newest
